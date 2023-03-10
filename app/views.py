@@ -5,8 +5,14 @@ Werkzeug Documentation:  https://werkzeug.palletsprojects.com/
 This file contains the routes for your application.
 """
 
-from app import app
-from flask import render_template, request, redirect, url_for
+import os
+import locale
+from app import app, db
+from flask import render_template, request, redirect, url_for, flash, send_from_directory
+from app.forms import AddProperty
+from app.models import Property
+from werkzeug.utils import secure_filename
+locale.setlocale( locale.LC_ALL, 'en_CA.UTF-8' )
 
 
 ###
@@ -22,7 +28,7 @@ def home():
 @app.route('/about/')
 def about():
     """Render the website's about page."""
-    return render_template('about.html', name="Mary Jane")
+    return render_template('about.html', name="Ruth-Ann Blair")
 
 
 ###
@@ -38,12 +44,59 @@ def flash_errors(form):
                 error
             ), 'danger')
 
+@app.route('/uploads/<filename>')
+def get_image(filename):
+    return send_from_directory(os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER']), filename)
+
 @app.route('/<file_name>.txt')
 def send_text_file(file_name):
     """Send your static text file."""
     file_dot_text = file_name + '.txt'
     return app.send_static_file(file_dot_text)
 
+@app.route('/properties/create', methods =['GET', 'POST'])
+def upload():
+    addForm = AddProperty()
+
+    if request.method == 'GET':
+        return render_template('addproperty.html', formobj = addForm)
+
+    if request.method == 'POST':
+        if addForm.validate_on_submit(): 
+            fileobj = request.files['photo']
+            cleanedname = secure_filename(fileobj.filename)
+            fileobj.save(os.path.join(app.config['UPLOAD_FOLDER'], cleanedname))
+            if fileobj and cleanedname != "" :
+                newproperty = Property(request.form['propertytitle'],request.form['numberofrooms'], request.form['numberofbathrooms'], request.form['location'], request.form['price'], request.form['description'], request.form['Type'], cleanedname)
+                db.session.add(newproperty)
+                db.session.commit()
+                flash('Your Property Was Successfully Added', 'success')
+                return redirect(url_for('displayproperties'))
+    flash_errors(addForm) 
+    return render_template('addproperty.html', formobj = addForm)
+
+@app.route('/properties')
+def displayproperties():
+    if request.method == 'GET':
+        properties = Property.query.all()
+        print(properties)
+        return render_template('properties.html', propertylist = properties, loc =locale)
+
+@app.route('/properties/<propertyid>')
+def displayproperty(propertyid):
+    property = Property.query.filter(Property.id==propertyid).all()[0]
+    
+    if property.numberofrooms > 1:
+        bedroomlabel = 'Bedrooms'
+    else:
+        bedroomlabel = 'Bedroom'
+
+    if property.numberofbathrooms > 1:
+        bathroomlabel ='Bathrooms'
+    else:
+        bathroomlabel ='Bathroom'
+    
+    return render_template('property.html', singleproperty = property, bathlabel = bathroomlabel, bedlabel = bedroomlabel, loc=locale)
 
 @app.after_request
 def add_header(response):
